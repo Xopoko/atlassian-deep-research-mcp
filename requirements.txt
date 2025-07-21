@@ -29,3 +29,5 @@ typing-inspection==0.4.1
 typing_extensions==4.14.0
 uvicorn==0.34.3
 websockets==15.0.1
+pytest==8.2.0
+pytest-asyncio==0.23.6
