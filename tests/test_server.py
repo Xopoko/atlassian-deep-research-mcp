@@ -33,3 +33,20 @@ async def test_fetch_issue(monkeypatch):
     monkeypatch.setattr(atlassian_mcp, 'client', httpx.AsyncClient(transport=transport))
     result = await atlassian_mcp.jira_fetch('1')
     assert result.title == 'Issue'
+
+@pytest.mark.asyncio
+async def test_search_open_tasks(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith('/search'):
+            assert request.url.params['jql'] == (
+                'assignee = currentUser() AND statusCategory != Done ORDER BY created DESC'
+            )
+            return httpx.Response(200, json={'issues': []})
+        raise AssertionError('unexpected url ' + request.url.path)
+
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(atlassian_mcp, 'client', httpx.AsyncClient(transport=transport))
+    server = atlassian_mcp.create_server()
+    tools = await server.get_tools()
+    page = await tools['search'].fn('Открытые задачи, назначенные на меня')
+    assert page.results == []

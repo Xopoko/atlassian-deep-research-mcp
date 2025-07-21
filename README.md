@@ -22,7 +22,7 @@ These can be placed in a `.env` file or exported in the shell before running the
 
 ## Run
 
-Start the server with SSE transport:
+Start the server with SSE transport. Both GET and POST requests are served from `/sse`:
 
 ```bash
 python atlassian_mcp.py
@@ -38,4 +38,6 @@ The server exposes two tools compatible with ChatGPT Deep Research Custom Connec
 - `fetch(id: str)` – fetches the full body and metadata for the given result ID.
 
 IDs returned from `search` are prefixed with `jira:` or `confluence:` to indicate their source.
+
+Queries like "assigned to me" or "открытые задачи" automatically search Jira for open issues assigned to the current user using JQL `assignee = currentUser() AND statusCategory != Done`.
 

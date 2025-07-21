@@ -33,7 +33,7 @@ def _jira_base_url() -> str:
 def _confluence_base_url() -> str:
     return f"{settings.ATLASSIAN_SITE_URL}/wiki/rest/api"
 
-async def jira_search(query: str) -> list[SearchResult]:
+async def _jira_search(query: str) -> list[SearchResult]:
     url = f"{_jira_base_url()}/search"
     params = {"jql": f'text ~ "{query}"', "maxResults": 10}
     r = await client.get(url, params=params)
@@ -55,7 +55,29 @@ async def jira_search(query: str) -> list[SearchResult]:
         )
     return results
 
-async def confluence_search(query: str) -> list[SearchResult]:
+async def _jira_search_by_jql(jql: str) -> list[SearchResult]:
+    url = f"{_jira_base_url()}/search"
+    params = {"jql": jql, "maxResults": 10}
+    r = await client.get(url, params=params)
+    r.raise_for_status()
+    data = r.json()
+    results = []
+    for issue in data.get("issues", []):
+        fields = issue.get("fields", {})
+        summary = fields.get("summary", "")
+        description = fields.get("description", "")
+        if isinstance(description, dict):
+            description = description.get("content", "")
+        results.append(
+            SearchResult(
+                id=f"jira:{issue['id']}",
+                title=summary,
+                text=str(description)[:200],
+            )
+        )
+    return results
+
+async def _confluence_search(query: str) -> list[SearchResult]:
     url = f"{_confluence_base_url()}/content/search"
     params = {"cql": f'type=page AND text~"{query}"', "limit": 10, "expand": "excerpt"}
     r = await client.get(url, params=params)
@@ -73,6 +95,9 @@ async def confluence_search(query: str) -> list[SearchResult]:
             )
         )
     return results
+
+jira_search = _jira_search
+confluence_search = _confluence_search
 
 async def jira_fetch(issue_id: str) -> FetchResult:
     url = f"{_jira_base_url()}/issue/{issue_id}"
@@ -116,8 +141,15 @@ def create_server() -> FastMCP:
 
     @mcp.tool()
     async def search(query: str) -> SearchResultPage:
-        jira_results = await jira_search(query)
-        conf_results = await confluence_search(query)
+        ql = query.lower()
+        keywords = ["assigned to me", "назначенные на меня", "открытые задачи"]
+        if any(k in ql for k in keywords):
+            jira_results = await _jira_search_by_jql(
+                "assignee = currentUser() AND statusCategory != Done ORDER BY created DESC"
+            )
+            return SearchResultPage(results=jira_results)
+        jira_results = await _jira_search(query)
+        conf_results = await _confluence_search(query)
         return SearchResultPage(results=jira_results + conf_results)
 
     @mcp.tool()
@@ -131,4 +163,10 @@ def create_server() -> FastMCP:
     return mcp
 
 if __name__ == "__main__":
-    create_server().run(transport="sse", host="127.0.0.1", port=8000)
+    create_server().run(
+        transport="sse",
+        host="127.0.0.1",
+        port=8000,
+        path="/sse",
+        message_path="/sse",
+    )
